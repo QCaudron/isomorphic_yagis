@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -40,3 +41,34 @@ def clip_antenna_to_limits(
     for key in antenna.keys():
         antenna[key] = np.clip(antenna[key], limits[key][0], limits[key][1])
     return antenna
+
+
+def plot_results(output: dict):
+    antennas = output["antennas"]
+    best_antenna = antennas[np.argmax(output["fitness"])]
+
+    plt.figure(figsize=(14, 3))
+
+    plt.subplot(151)
+    plt.plot(output["history"])
+    plt.title("Mean Fitness")
+
+    plt.subplot(152)
+    plt.hist(output["fitness"], bins=50)
+    plt.title("Final Fitness")
+
+    plt.subplot(153)
+    plt.plot(output["accepted"])
+    plt.title("Acceptance rate")
+
+    plt.subplot(154)
+    plt.plot(output["variance"])
+    plt.title("Variance")
+
+    plt.subplot(155)
+    plt.plot(output["generation_time"])
+    plt.title("Generation time")
+
+    plt.tight_layout()
+
+    return antennas, best_antenna

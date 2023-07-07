@@ -2,6 +2,7 @@
 *.out
 checkpoint*.json
 .vscode/*
+nec2++*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

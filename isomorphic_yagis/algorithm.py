@@ -1,19 +1,34 @@
 import json
 from time import time
 
-import matplotlib.pyplot as plt
 import numpy as np
 import ray
-from scipy.stats import hmean
+
 from tqdm import trange
 
 from isomorphic_yagis.nec import evaluate_antenna
-from isomorphic_yagis.utils import BANDS, PARAMETER_LIMITS, clip_antenna_to_limits
+from isomorphic_yagis.utils import (
+    BANDS,
+    BAND_CENTRAL_FREQUENCIES,
+    PARAMETER_LIMITS,
+    clip_antenna_to_limits,
+)
 
 
 @ray.remote
 def evaluate_antenna_with_ray(antenna: dict[str, float]):
     return evaluate_antenna(antenna)
+
+
+def generate_valid_element_lengths(element: str, bands: list[str] = BANDS):
+    lower_limits = [PARAMETER_LIMITS[f"{element}_length_{band}"][0] for band in bands]
+    upper_limits = [PARAMETER_LIMITS[f"{element}_length_{band}"][1] for band in bands]
+
+    lengths = np.random.uniform(lower_limits, upper_limits)
+    while not (np.diff(lengths) <= 0).all():
+        lengths = np.random.uniform(lower_limits, upper_limits)
+
+    return {band: length for band, length in zip(bands, lengths)}
 
 
 def initialise(
@@ -25,8 +40,17 @@ def initialise(
 
     initial_pop = []
     while len(initial_pop) < n_antennas:
+        # Band-specific parameters -- the driven elements and reflector(s)
+        driven_lengths = generate_valid_element_lengths("driven", bands)
+        reflector_lengths = generate_valid_element_lengths("reflector", bands)
+
+        band_params = {}
+        for band in bands:
+            band_params[f"driven_length_{band}"] = driven_lengths[band]
+            band_params[f"reflector_length_{band}"] = reflector_lengths[band]
+
         # Parameters common to all antennas
-        antenna = {
+        common_params = {
             "anchor_offset": np.random.uniform(
                 PARAMETER_LIMITS["anchor_offset"][0], PARAMETER_LIMITS["anchor_offset"][1]
             ),
@@ -38,24 +62,7 @@ def initialise(
             ),
         }
 
-        # Band-specific parameters -- the driven elements and reflector(s)
-        for band in bands:
-            antenna[f"driven_length_{band}"] = np.random.uniform(
-                PARAMETER_LIMITS[f"driven_length_{band}"][0],
-                PARAMETER_LIMITS[f"driven_length_{band}"][1],
-            )
-            if not common_reflector:
-                antenna[f"reflector_length_{band}"] = np.random.uniform(
-                    PARAMETER_LIMITS[f"reflector_length_{band}"][0],
-                    PARAMETER_LIMITS[f"reflector_length_{band}"][1],
-                )
-            else:
-                antenna["common_reflector_length"] = np.random.uniform(
-                    PARAMETER_LIMITS["common_reflector_length"][0],
-                    PARAMETER_LIMITS["common_reflector_length"][1],
-                )
-
-        initial_pop.append(clip_antenna_to_limits(antenna))
+        initial_pop.append(clip_antenna_to_limits(band_params | common_params))
 
     return initial_pop
 
@@ -150,8 +157,8 @@ def differential_evolution(
         generation_time.append(time() - tic)
 
         # Write a checkpoint backup if required
-        if (checkpoint > 0) and ((i % checkpoint == 0) or (i == n_generations - 1)):
-            with open(f"checkpoint_{i}.json", "w") as f:
+        if (checkpoint > 0) and (((i % checkpoint) == 0) or (i == (n_generations - 1))):
+            with open(f"checkpoint_{i+1}.json", "w") as f:
                 json.dump(antennas, f)
 
     return {
@@ -162,39 +169,3 @@ def differential_evolution(
         "variance": variance,
         "generation_time": generation_time,
     }
-
-
-def plot_results(output: dict):
-    antennas = output["antennas"]
-    fitness = output["fitness"]
-    history = output["history"]
-    accepted = output["accepted"]
-    variance = output["variance"]
-    generation_time = output["generation_time"]
-    best_antenna = antennas[np.argmax(fitness)]
-
-    plt.figure(figsize=(14, 3))
-
-    plt.subplot(151)
-    plt.plot(history)
-    plt.title("Mean Fitness")
-
-    plt.subplot(152)
-    plt.hist(fitness, bins=50)
-    plt.title("Final Fitness")
-
-    plt.subplot(153)
-    plt.plot(accepted)
-    plt.title("Acceptance rate")
-
-    plt.subplot(154)
-    plt.plot(variance)
-    plt.title("Variance")
-
-    plt.subplot(155)
-    plt.plot(generation_time)
-    plt.title("Generation time")
-
-    plt.tight_layout()
-
-    return antennas, fitness, history, accepted, variance, generation_time, best_antenna

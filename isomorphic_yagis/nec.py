@@ -3,6 +3,7 @@ from subprocess import PIPE, Popen
 from uuid import uuid4
 
 import numpy as np
+from scipy.stats import hmean
 
 from isomorphic_yagis.utils import BAND_CENTRAL_FREQUENCIES
 
@@ -129,13 +130,13 @@ def evaluate_antenna(antenna: dict[str, float], write=False):
 
         # Attempt to calculate the SWR from complex impedance
         try:
-            swr = _calculate_swr(_find_impedance(output))
+            swr = calculate_swr(find_impedance(output))
         except:
             pass
 
         # Attempt to read the gain
         try:
-            gain = _find_gain(output)
+            gain = find_gain(output)
         except:
             pass
 
