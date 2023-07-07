@@ -1,5 +1,52 @@
+[project]
+name = "isomorphic_yagis"
+description = "Designing Field Day antennas with differential evolution"
+authors = [{name = "Quentin Caudron", email = "quentincaudron@gmail.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy >= 1.21",
+    "ray >= 2.5",
+    "tqdm >= 4.60",
+    "scipy >= 1.10",
+]
+
+[project.optional-dependencies]
+test = [
+    "black >= 22.0",
+    "ruff >= 0.0.265",
+]
+
 [tool.black]
 line-length = 99
+include = '\.py$'
+
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+format = "grouped"
+ignore-init-module-imports = true
+extend-exclude = [".envs", "tests"]
+select = [
+  "B",   # flake8-bugbear
+  "E",   # pycodestyle
+  "F",   # pyflakes
+  "UP",  # pyupgrade
+  "D",   # pydocstyle
+  "I",   # isort
+  "W",   # pycodestyle
+  "SIM", # flake8-simplify
+  "NPY", # numpy-specific
+]
+ignore = ["F821"]
+
+[tool.ruff.pydocstyle]
+convention = "numpy"
 
 [tool.isort]
-profile = "black"
+profile = 'black'
+skip_glob = ['*/.envs/*']
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
