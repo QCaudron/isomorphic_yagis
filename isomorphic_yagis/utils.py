@@ -34,7 +34,9 @@ PARAMETER_LIMITS = {
 
 
 def clip_antenna_to_limits(
-    antenna: dict[str, float], limits: dict[str, tuple[float, float]] = PARAMETER_LIMITS
+    antenna: dict[str, float],
+    limits: dict[str, tuple[float, float]] = PARAMETER_LIMITS,
+    override_values: dict[str, str] | None = None,
 ) -> dict[str, float]:
     """
     Clip an antenna's parameters to within "reasonable limits".
@@ -45,6 +47,8 @@ def clip_antenna_to_limits(
         The antenna to clip.
     limits : dict[str, tuple[float, float]], optional
         The limits to clip the antenna to. By default, the standard limits set by PARAMETER_LIMITS.
+    override_value : dict[str, str], optional
+        A mapping between parameters to override and the parameter to override them with.
 
     Returns
     -------
@@ -53,6 +57,12 @@ def clip_antenna_to_limits(
     """
     for key in antenna:
         antenna[key] = np.clip(antenna[key], limits[key][0], limits[key][1])
+
+    # If we're fixing any parameters to the value of another, do that here
+    if override_values is not None:
+        for key in override_values:
+            antenna[key] = antenna[override_values[key]]
+
     return antenna
 
 
@@ -100,3 +110,47 @@ def plot_results(results: dict) -> tuple[list[dict[str, float]], dict[str, float
     plt.tight_layout()
 
     return antennas, best_antenna
+
+
+def plot_population(antennas: list[dict[str, float]], fitnesses: list[float]) -> None:
+
+    bands = [key.split("_")[-1] for key in antennas[0].keys() if "driven" in key]
+    n_bands = len(bands)
+    n_cols = max(n_bands, 3)
+
+    best_antenna = antennas[np.argmax(fitnesses)]
+
+    plt.figure(figsize=(12, 6))
+
+    for idx, band in enumerate(bands):
+        plt.subplot(3, n_cols, idx + 1)
+        plt.hist([antenna[f"driven_length_{band}"] for antenna in antennas], bins=30)
+        plt.title(f"Driven length {band}m")
+        plt.axvline(best_antenna[f"driven_length_{band}"], color="red")
+        plt.yticks([])
+
+        plt.subplot(3, n_cols, idx + 1 + n_cols)
+        plt.hist([antenna[f"reflector_length_{band}"] for antenna in antennas], bins=30)
+        plt.title(f"Reflector length {band}m")
+        plt.axvline(best_antenna[f"reflector_length_{band}"], color="red")
+        plt.yticks([])
+
+    plt.subplot(3, n_cols, 2 * n_cols + 1)
+    plt.hist([antenna["pole_distance"] for antenna in antennas], bins=30)
+    plt.title("Pole distance")
+    plt.axvline(best_antenna["pole_distance"], color="red")
+    plt.yticks([])
+
+    plt.subplot(3, n_cols, 2 * n_cols + 2)
+    plt.hist([antenna["anchor_offset"] for antenna in antennas], bins=30)
+    plt.title("Anchor offset")
+    plt.axvline(best_antenna["anchor_offset"], color="red")
+    plt.yticks([])
+
+    plt.subplot(3, n_cols, 2 * n_cols + 3)
+    plt.hist([antenna["height"] for antenna in antennas], bins=30)
+    plt.title("Height")
+    plt.axvline(best_antenna["height"], color="red")
+    plt.yticks([])
+
+    plt.tight_layout()

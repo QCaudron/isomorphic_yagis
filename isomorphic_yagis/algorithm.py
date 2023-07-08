@@ -35,7 +35,9 @@ def evaluate_antenna_with_ray(antenna: dict[str, float]) -> float:
     return evaluate_antenna(antenna)  # type: ignore
 
 
-def generate_valid_element_lengths(element: str, bands: list[str] = BANDS) -> dict[str, float]:
+def generate_valid_element_lengths(
+    element: str, bands: list[str] = BANDS, limits: dict[str, tuple[float, float]] | None = None
+) -> dict[str, float]:
     """
     Generate a set of element lengths within parameter limits, and are in order of length by band.
 
@@ -46,14 +48,19 @@ def generate_valid_element_lengths(element: str, bands: list[str] = BANDS) -> di
     bands : list[str], optional
         A list of bands to generate element lengths for.
         Defaults to ["80", "40", "20", "15", "10"].
+    limits : dict[str, tuple[float, float]], optional
+        A dictionary of parameter limits to use.
 
     Returns
     -------
     dict[str, float]
         A mapping between bands and element lengths.
     """
-    lower_limits = [PARAMETER_LIMITS[f"{element}_length_{band}"][0] for band in bands]
-    upper_limits = [PARAMETER_LIMITS[f"{element}_length_{band}"][1] for band in bands]
+    if limits is None:
+        limits = PARAMETER_LIMITS
+
+    lower_limits = [limits[f"{element}_length_{band}"][0] for band in bands]
+    upper_limits = [limits[f"{element}_length_{band}"][1] for band in bands]
 
     lengths = rng.uniform(lower_limits, upper_limits)
     while not (np.diff(lengths) <= 0).all():
@@ -63,7 +70,10 @@ def generate_valid_element_lengths(element: str, bands: list[str] = BANDS) -> di
 
 
 def initialise(
-    n_antennas: int, bands: list[str] = BANDS, common_reflector: bool = False
+    n_antennas: int,
+    bands: list[str] = BANDS,
+    limits: dict[str, tuple[float, float]] | None = None,
+    override_values: dict[str, str] | None = None,
 ) -> list[dict[str, float]]:
     """
     Create an initial, random population of antennas for the specified bands.
@@ -75,19 +85,24 @@ def initialise(
     bands : list[str], optional
         A list of bands to create antennas for.
         Defaults to ["80", "40", "20", "15", "10"].
-    common_reflector : bool, optional
-        Whether to use a common reflector for all antennas. Defaults to False.
+    limits : dict[str, tuple[float, float]]
+        A dictionary of parameter limits to use.
+    override_values : dict[str, str] | None, optional
+        A dictionary of antenna parameters to override with other values.
 
     Returns
     -------
     list[dict[str, float]]
         A list of antenna parameter dictionaries.
     """
+    if limits is None:
+        limits = PARAMETER_LIMITS
+
     initial_pop = []
     while len(initial_pop) < n_antennas:
         # Band-specific parameters -- the driven elements and reflector(s)
-        driven_lengths = generate_valid_element_lengths("driven", bands)
-        reflector_lengths = generate_valid_element_lengths("reflector", bands)
+        driven_lengths = generate_valid_element_lengths("driven", bands=bands, limits=limits)
+        reflector_lengths = generate_valid_element_lengths("reflector", bands=bands, limits=limits)
 
         band_params = {}
         for band in bands:
@@ -105,7 +120,11 @@ def initialise(
             "height": rng.uniform(PARAMETER_LIMITS["height"][0], PARAMETER_LIMITS["height"][1]),
         }
 
-        initial_pop.append(clip_antenna_to_limits(band_params | common_params))
+        initial_pop.append(
+            clip_antenna_to_limits(
+                band_params | common_params, limits=limits, override_values=override_values
+            )
+        )
 
     return initial_pop
 
@@ -129,7 +148,11 @@ def evaluate_generation(antennas: list[dict[str, float]]) -> np.ndarray:
 
 
 def mutate(
-    antennas: list[dict[str, float]], crossover_prob: float = 0.7, differential_weight: float = 0.8
+    antennas: list[dict[str, float]],
+    crossover_prob: float = 0.7,
+    differential_weight: float = 0.8,
+    limits: dict[str, tuple[float, float]] | None = None,
+    override_values: dict[str, str] | None = None,
 ) -> list[dict[str, float]]:
     """
     Mutate a population of antennas using differential evolution.
@@ -142,12 +165,20 @@ def mutate(
         The probability of a given parameter crossing over, by default 0.7.
     differential_weight : float, optional
         The mutation strength, by default 0.8.
+    limits : dict[str, tuple[float, float]] | None, optional
+        A dictionary of parameter limits to use, by default None. If None,
+        defaults to isomorphic_yagis.utils.PARAMETER_LIMITS.
+    override_values : dict[str, str] | None, optional
+        A dictionary of antenna parameters to override with other values.
 
     Returns
     -------
     list[dict[str, float]]
         A list of mutated antenna parameter dictionaries.
     """
+    if limits is None:
+        limits = PARAMETER_LIMITS
+
     mutated_antennas = []
 
     for ant_idx, antenna in enumerate(antennas):
@@ -169,7 +200,9 @@ def mutate(
                     antennas[others[1]][key] - antennas[others[2]][key]
                 )
 
-        mutated_antennas.append(clip_antenna_to_limits(new_antenna))
+        mutated_antennas.append(
+            clip_antenna_to_limits(new_antenna, limits=limits, override_values=override_values)
+        )
 
     return mutated_antennas
 
@@ -200,8 +233,12 @@ def differential_evolution(
     n_population: int = 100,
     n_generations: int = 50,
     init: dict | None = None,
+    crossover_prob: float = 0.7,
+    differential_weight: float = 0.8,
     checkpoint: int = 50,
     bands: list[str] = BANDS,
+    limits: dict[str, tuple[float, float]] | None = None,
+    override_values: dict[str, str] | None = None,
 ) -> dict:
     """
     Perform differential evolution to optimise a population of antennas.
@@ -216,11 +253,20 @@ def differential_evolution(
         A dictionary containing antennas, fitness, history, accepted rates, variance rates, and
         generation times, from a previous experiment. This is used to continue evolving a previous
         experiment. If None, initialise a new population and start from scratch. By default None.
+    crossover_prob : float, optional
+        The probability of a given parameter crossing over, by default 0.7.
+    differential_weight : float, optional
+        The mutation strength, by default 0.8.
     checkpoint : int, optional
         An interval, in number of generations, to save a checkpoint at, by default 50.
     bands : list[str], optional
         A list of bands, used in initialising a new antenna population.
         By default, ["80", "40", "20", "15", "10"].
+    limits : dict[str, tuple[float, float]] | None, optional
+        A dictionary of parameter limits to use, by default None. If None,
+        defaults to isomorphic_yagis.utils.PARAMETER_LIMITS.
+    override_values : dict[str, str] | None, optional
+        A dictionary of antenna parameters to override with other values.
 
     Returns
     -------
@@ -237,7 +283,9 @@ def differential_evolution(
         generation_time = init["generation_time"]
 
     else:
-        antennas = initialise(n_population, bands=bands)
+        antennas = initialise(
+            n_population, bands=bands, limits=limits, override_values=override_values
+        )
         fitness = evaluate_generation(antennas)
         history = [fitness.mean()]
         accepted = []
@@ -248,7 +296,13 @@ def differential_evolution(
         tic = time()
 
         # Mutate antennas and reevaluate fitness
-        mutated_antennas = mutate(antennas)
+        mutated_antennas = mutate(
+            antennas,
+            crossover_prob=crossover_prob,
+            differential_weight=differential_weight,
+            limits=limits,
+            override_values=override_values,
+        )
         new_fitness = evaluate_generation(mutated_antennas)
 
         # Compute some metrics

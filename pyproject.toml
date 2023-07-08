@@ -1,6 +1,7 @@
 [project]
 name = "isomorphic_yagis"
 description = "Designing Field Day antennas with differential evolution"
+dynamic = ["version"]
 authors = [{name = "Quentin Caudron", email = "quentincaudron@gmail.com"}]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +16,7 @@ dependencies = [
 test = [
     "black >= 22.0",
     "ruff >= 0.0.265",
+    "pytest >= 7.2",
 ]
 
 [tool.black]
