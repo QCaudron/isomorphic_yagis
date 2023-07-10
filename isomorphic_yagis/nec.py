@@ -7,7 +7,7 @@ from uuid import uuid4
 import numpy as np
 from scipy.stats import hmean
 
-from isomorphic_yagis.utils import BAND_CENTRAL_FREQUENCIES
+from isomorphic_yagis.utils import BAND_CENTRAL_FREQUENCIES, BAND_WEIGHTS
 
 RP_QUICK_CALC = "RP 0 10 1 1500 45.0 0.0 3.0 3.0 5.0E+03"
 RP_FULL_CALC = "RP 0 91 181 1500 -90.0 0.0 2.0 2.0 5.0E+03"
@@ -92,7 +92,7 @@ def calculate_swr(impedance: complex, Z0: float = 50) -> float:
     return swr
 
 
-def evaluate_antenna(antenna: dict[str, float], write: bool = False) -> float | dict[str, float]:
+def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] | None = None, write: bool = False) -> float | dict[str, float]:
     """
     Evaluate the antenna by running the NEC simulation and computing the gain and SWR.
 
@@ -100,6 +100,9 @@ def evaluate_antenna(antenna: dict[str, float], write: bool = False) -> float | 
     ----------
     antenna : dict[str, float]
         The antenna parameters.
+    band_weights : dict[str, float], optional
+        The weights to apply to each band when computing the fitness. Defaults to 1 for
+        each band.
     write : bool, optional
         Whether to write the antenna files to disk for visualization. If False, files will
         be temporary, just for the simulation, before being deleted, and will only contain
@@ -113,16 +116,20 @@ def evaluate_antenna(antenna: dict[str, float], write: bool = False) -> float | 
     float
         The antenna's fitness -- the harmonic mean of its gain-to-SWR ratio across bands.
     """
-    # Radiation pattern fixed strings for the quicker and full calculations
+
+    if band_weights is None:
+        band_weights = BAND_WEIGHTS
 
     # Unpack params common to all bands
     pole_distance = antenna["pole_distance"]
     height = antenna["height"]
     anchor_offset = antenna["anchor_offset"]
 
-    # Unpack band-specific params
-    bands = [key.split("_")[-1] if "driven" in key else None for key in antenna]
+    # Determine which bands the antenna is for
+    bands = [key.split("_")[-1] if "driven" in key else None for key in antenna.keys()]
     bands = [band for band in bands if band is not None]
+
+    # Unpack band-specific params
     frequencies = [BAND_CENTRAL_FREQUENCIES[band] for band in bands]
     driven_lengths = [antenna[f"driven_length_{band}"] for band in bands]
     reflector_lengths = [antenna[f"reflector_length_{band}"] for band in bands]
@@ -182,13 +189,14 @@ def evaluate_antenna(antenna: dict[str, float], write: bool = False) -> float | 
             return 0
 
         # If we're writing the files, return the gain and SWR individually for each band
+        score = max(gain / swr, 0) * band_weights[band]
         if write:
-            results.append({"gain": gain, "swr": swr})
+            results.append({"gain": gain, "swr": swr, "score": score})
         # Otherwise, calculate the fitness for this band and add it to the list
         else:
-            results.append(max(gain / swr, 0))
+            results.append(score)
 
     if write:
         return {band: result for band, result in zip(bands, results, strict=True)}
 
-    return hmean(results)
+    return np.mean(results)

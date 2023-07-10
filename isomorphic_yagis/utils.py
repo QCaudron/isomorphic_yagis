@@ -6,6 +6,9 @@ import numpy as np
 BANDS = ["80", "40", "20", "15", "10"]
 
 
+BAND_WEIGHTS = {band: 1.0 for band in BANDS}
+
+
 BAND_CENTRAL_FREQUENCIES = {
     "80": 3.6,
     "40": 7.1,
@@ -85,27 +88,31 @@ def plot_results(results: dict) -> tuple[list[dict[str, float]], dict[str, float
     antennas = results["antennas"]
     best_antenna = antennas[np.argmax(results["fitness"])]
 
-    plt.figure(figsize=(14, 3))
+    plt.figure(figsize=(10, 5))
 
-    plt.subplot(151)
+    plt.subplot(231)
     plt.plot(results["history"])
     plt.title("Mean Fitness")
 
-    plt.subplot(152)
+    plt.subplot(232)
     plt.hist(results["fitness"], bins=50)
     plt.title("Final Fitness")
 
-    plt.subplot(153)
+    plt.subplot(233)
     plt.plot(results["accepted"])
     plt.title("Acceptance rate")
 
-    plt.subplot(154)
+    plt.subplot(234)
     plt.plot(results["variance"])
     plt.title("Variance")
 
-    plt.subplot(155)
+    plt.subplot(235)
     plt.plot(results["generation_time"])
     plt.title("Generation time")
+
+    plt.subplot(236)
+    plt.plot(results["zeros"])
+    plt.title("Zeros")
 
     plt.tight_layout()
 

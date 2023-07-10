@@ -9,6 +9,7 @@ from tqdm import trange
 
 from isomorphic_yagis.nec import evaluate_antenna
 from isomorphic_yagis.utils import (
+    BAND_WEIGHTS,
     BANDS,
     PARAMETER_LIMITS,
     clip_antenna_to_limits,
@@ -18,7 +19,7 @@ rng = np.random.default_rng()
 
 
 @ray.remote
-def evaluate_antenna_with_ray(antenna: dict[str, float]) -> float:
+def evaluate_antenna_with_ray(antenna: dict[str, float], band_weights: dict[str, float] | None = None) -> float:
     """
     Evaluate an antenna's fitness using NEC, using Ray to parallelise the process.
 
@@ -26,13 +27,15 @@ def evaluate_antenna_with_ray(antenna: dict[str, float]) -> float:
     ----------
     antenna : dict[str, float]
         A dictionary of antenna parameters.
+    band_weights : dict[str, float], optional
+        A dictionary of band weights to use.
 
     Returns
     -------
     float
         The antenna's fitness.
     """
-    return evaluate_antenna(antenna)  # type: ignore
+    return evaluate_antenna(antenna=antenna, band_weights=band_weights)  # type: ignore
 
 
 def generate_valid_element_lengths(
@@ -129,7 +132,7 @@ def initialise(
     return initial_pop
 
 
-def evaluate_generation(antennas: list[dict[str, float]]) -> np.ndarray:
+def evaluate_generation(antennas: list[dict[str, float]], band_weights: dict[str, float] | None = None) -> np.ndarray:
     """
     Return an array of fitness values for the given antennas.
 
@@ -137,13 +140,15 @@ def evaluate_generation(antennas: list[dict[str, float]]) -> np.ndarray:
     ----------
     antennas : list[dict[str, float]]
         A list of antenna parameter dictionaries.
+    band_weights : dict[str, float], optional
+        A dictionary of band weights to use.
 
     Returns
     -------
     np.ndarray
         An array of fitness values.
     """
-    results = [evaluate_antenna_with_ray.remote(antenna) for antenna in antennas]
+    results = [evaluate_antenna_with_ray.remote(antenna, band_weights=band_weights) for antenna in antennas]
     return np.array(ray.get(results))
 
 
@@ -239,6 +244,8 @@ def differential_evolution(
     bands: list[str] = BANDS,
     limits: dict[str, tuple[float, float]] | None = None,
     override_values: dict[str, str] | None = None,
+    band_weights: dict[str, float] | None = None,
+    variance_threshold: float = 1e-5,
 ) -> dict:
     """
     Perform differential evolution to optimise a population of antennas.
@@ -267,6 +274,9 @@ def differential_evolution(
         defaults to isomorphic_yagis.utils.PARAMETER_LIMITS.
     override_values : dict[str, str] | None, optional
         A dictionary of antenna parameters to override with other values.
+    band_weights : dict[str, float] | None, optional
+        A dictionary of band weights to use in fitness evaluation, by default None. If None,
+        defaults to the same value for each band.
 
     Returns
     -------
@@ -281,16 +291,21 @@ def differential_evolution(
         accepted = init["accepted"]
         variance = init["variance"]
         generation_time = init["generation_time"]
+        zeros = init["zeros"]
 
     else:
         antennas = initialise(
             n_population, bands=bands, limits=limits, override_values=override_values
         )
-        fitness = evaluate_generation(antennas)
+        fitness = evaluate_generation(antennas, band_weights=band_weights)
         history = [fitness.mean()]
         accepted = []
         variance = []
         generation_time = []
+        zeros = []
+
+    if band_weights is None:
+        band_weights = BAND_WEIGHTS
 
     for i in trange(n_generations):
         tic = time()
@@ -303,7 +318,7 @@ def differential_evolution(
             limits=limits,
             override_values=override_values,
         )
-        new_fitness = evaluate_generation(mutated_antennas)
+        new_fitness = evaluate_generation(mutated_antennas, band_weights=band_weights)
 
         # Compute some metrics
         accepted.append((fitness < new_fitness).mean())
@@ -324,11 +339,16 @@ def differential_evolution(
         # More metrics
         history.append(np.mean(fitness))
         generation_time.append(time() - tic)
+        zeros.append((fitness == 0).sum())
 
         # Write a checkpoint backup if required
         if (checkpoint > 0) and (((i % checkpoint) == 0) or (i == (n_generations - 1))):
             with open(f"checkpoint_{i+1}.json", "w") as f:
                 json.dump(antennas, f)
+
+        if variance[-1] < variance_threshold:
+            print("Variance threshold reached, stopping.")
+            break
 
     return {
         "antennas": antennas,
@@ -337,4 +357,5 @@ def differential_evolution(
         "accepted": accepted,
         "variance": variance,
         "generation_time": generation_time,
+        "zeros": zeros,
     }
