@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from isomorphic_yagis.algorithm import generate_valid_element_lengths, initialise, mutate, population_variance
+from isomorphic_yagis.algorithm import (
+    generate_valid_element_lengths,
+    initialise,
+    mutate,
+    population_variance,
+)
 from isomorphic_yagis.utils import PARAMETER_LIMITS, BANDS
 
 
@@ -97,8 +102,8 @@ def test_mutate(n_antennas, bands, limits, override_values, crossover_prob, diff
     "antennas, expected",
     [
         ([{"driven_length_20": 1}, {"driven_length_20": 2}], 0.25),
-        ([{"driven_length_20": 1}, {"driven_length_20": 1}], 0),      
-    ]
+        ([{"driven_length_20": 1}, {"driven_length_20": 1}], 0),
+    ],
 )
 def test_population_variance(antennas, expected):
     assert population_variance(antennas) == expected

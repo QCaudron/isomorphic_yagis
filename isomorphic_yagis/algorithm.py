@@ -19,7 +19,11 @@ rng = np.random.default_rng()
 
 
 @ray.remote
-def evaluate_antenna_with_ray(antenna: dict[str, float], band_weights: dict[str, float] | None = None) -> float:
+def evaluate_antenna_with_ray(
+    antenna: dict[str, float],
+    band_weights: dict[str, float] | None = None,
+    include_unlinked_reflectors: bool = False,
+) -> float:
     """
     Evaluate an antenna's fitness using NEC, using Ray to parallelise the process.
 
@@ -29,13 +33,19 @@ def evaluate_antenna_with_ray(antenna: dict[str, float], band_weights: dict[str,
         A dictionary of antenna parameters.
     band_weights : dict[str, float], optional
         A dictionary of band weights to use.
+    include_unlinked_reflectors : bool, optional
+        Whether to include unlinked reflectors in the fitness calculation.
 
     Returns
     -------
     float
         The antenna's fitness.
     """
-    return evaluate_antenna(antenna=antenna, band_weights=band_weights)  # type: ignore
+    return evaluate_antenna(  # type: ignore
+        antenna=antenna,
+        band_weights=band_weights,
+        include_unlinked_reflectors=include_unlinked_reflectors,
+    )
 
 
 def generate_valid_element_lengths(
@@ -132,7 +142,11 @@ def initialise(
     return initial_pop
 
 
-def evaluate_generation(antennas: list[dict[str, float]], band_weights: dict[str, float] | None = None) -> np.ndarray:
+def evaluate_generation(
+    antennas: list[dict[str, float]],
+    band_weights: dict[str, float] | None = None,
+    include_unlinked_reflectors: bool = False,
+) -> np.ndarray:
     """
     Return an array of fitness values for the given antennas.
 
@@ -142,13 +156,22 @@ def evaluate_generation(antennas: list[dict[str, float]], band_weights: dict[str
         A list of antenna parameter dictionaries.
     band_weights : dict[str, float], optional
         A dictionary of band weights to use.
+    include_unlinked_reflectors : bool, optional
+        Whether to include unlinked reflectors in the fitness calculation.
 
     Returns
     -------
     np.ndarray
         An array of fitness values.
     """
-    results = [evaluate_antenna_with_ray.remote(antenna, band_weights=band_weights) for antenna in antennas]
+    results = [
+        evaluate_antenna_with_ray.remote(
+            antenna,
+            band_weights=band_weights,
+            include_unlinked_reflectors=include_unlinked_reflectors,
+        )
+        for antenna in antennas
+    ]
     return np.array(ray.get(results))
 
 
@@ -245,7 +268,8 @@ def differential_evolution(
     limits: dict[str, tuple[float, float]] | None = None,
     override_values: dict[str, str] | None = None,
     band_weights: dict[str, float] | None = None,
-    variance_threshold: float = 1e-5,
+    include_unlinked_reflectors: bool = False,
+    variance_threshold: float = 1e-4,
 ) -> dict:
     """
     Perform differential evolution to optimise a population of antennas.
@@ -274,6 +298,8 @@ def differential_evolution(
         defaults to isomorphic_yagis.utils.PARAMETER_LIMITS.
     override_values : dict[str, str] | None, optional
         A dictionary of antenna parameters to override with other values.
+    include_unlinked_reflectors : bool, optional
+        Whether to include unlinked reflectors in the fitness evaluation, by default False.
     band_weights : dict[str, float] | None, optional
         A dictionary of band weights to use in fitness evaluation, by default None. If None,
         defaults to the same value for each band.
@@ -297,7 +323,11 @@ def differential_evolution(
         antennas = initialise(
             n_population, bands=bands, limits=limits, override_values=override_values
         )
-        fitness = evaluate_generation(antennas, band_weights=band_weights)
+        fitness = evaluate_generation(
+            antennas,
+            band_weights=band_weights,
+            include_unlinked_reflectors=include_unlinked_reflectors,
+        )
         history = [fitness.mean()]
         accepted = []
         variance = []
@@ -318,7 +348,11 @@ def differential_evolution(
             limits=limits,
             override_values=override_values,
         )
-        new_fitness = evaluate_generation(mutated_antennas, band_weights=band_weights)
+        new_fitness = evaluate_generation(
+            mutated_antennas,
+            band_weights=band_weights,
+            include_unlinked_reflectors=include_unlinked_reflectors,
+        )
 
         # Compute some metrics
         accepted.append((fitness < new_fitness).mean())

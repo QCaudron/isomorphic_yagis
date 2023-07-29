@@ -5,7 +5,6 @@ from subprocess import PIPE, Popen
 from uuid import uuid4
 
 import numpy as np
-from scipy.stats import hmean
 
 from isomorphic_yagis.utils import BAND_CENTRAL_FREQUENCIES, BAND_WEIGHTS
 
@@ -17,6 +16,7 @@ CE
 GW 1 51 0 -{driven_element_length} {height} 0 {driven_element_length} {height} 0.001
 GW 2 51 -{anchor_offset} 0 {height} {reflector_dx} {reflector_dy} {height} 0.001
 GW 3 51 -{anchor_offset} 0 {height} {reflector_dx} -{reflector_dy} {height} 0.001
+{unlinked_reflectors}
 GE -1
 GN 2 0 0 0 13 0.005
 EK
@@ -92,7 +92,12 @@ def calculate_swr(impedance: complex, Z0: float = 50) -> float:
     return swr
 
 
-def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] | None = None, write: bool = False) -> float | dict[str, float]:
+def evaluate_antenna(
+    antenna: dict[str, float],
+    band_weights: dict[str, float] | None = None,
+    include_unlinked_reflectors: bool = True,
+    write: bool = False,
+) -> float | dict[str, float]:
     """
     Evaluate the antenna by running the NEC simulation and computing the gain and SWR.
 
@@ -103,6 +108,10 @@ def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] |
     band_weights : dict[str, float], optional
         The weights to apply to each band when computing the fitness. Defaults to 1 for
         each band.
+    include_unlinked_reflectors : bool, optional
+        Whether to include the unlinked reflectors in the simulation. If False, the
+        reflectors that belong to lower-frequency bands will be removed from the supporting
+        rope, rather than left on the rope but unlinked. By default, True.
     write : bool, optional
         Whether to write the antenna files to disk for visualization. If False, files will
         be temporary, just for the simulation, before being deleted, and will only contain
@@ -116,7 +125,6 @@ def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] |
     float
         The antenna's fitness -- the harmonic mean of its gain-to-SWR ratio across bands.
     """
-
     if band_weights is None:
         band_weights = BAND_WEIGHTS
 
@@ -126,7 +134,7 @@ def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] |
     anchor_offset = antenna["anchor_offset"]
 
     # Determine which bands the antenna is for
-    bands = [key.split("_")[-1] if "driven" in key else None for key in antenna.keys()]
+    bands = [key.split("_")[-1] if "driven" in key else None for key in antenna]
     bands = [band for band in bands if band is not None]
 
     # Unpack band-specific params
@@ -144,6 +152,22 @@ def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] |
         bands, frequencies, driven_lengths, reflector_lengths, strict=True
     ):
         identifier = str(uuid4())
+
+        # Determine what unlinked reflectors look like for all but the longest band
+        if include_unlinked_reflectors and (reflector_length != max(reflector_lengths)):
+            max_reflector_length = max(reflector_lengths)
+            start_x = -anchor_offset * (1 - (reflector_length + 0.01))
+            start_y = pole_distance * (reflector_length + 0.01) / 2
+            end_x = -anchor_offset * (1 - max_reflector_length)
+            end_y = pole_distance * max_reflector_length / 2
+
+            unlinked_reflectors = (
+                f"GW 4 51 {start_x} {start_y} {height} {end_x} {end_y} {height} 0.001\n"
+                f"GW 5 51 {start_x} -{start_y} {height} {end_x} -{end_y} {height} 0.001"
+            )
+        else:
+            unlinked_reflectors = ""
+
         contents = CARD_DECK.format(
             height=height,
             anchor_offset=anchor_offset,
@@ -151,6 +175,7 @@ def evaluate_antenna(antenna: dict[str, float], band_weights: dict[str, float] |
             reflector_dx=-anchor_offset * (1 - reflector_length),
             reflector_dy=pole_distance * reflector_length / 2,
             frequency=frequency,
+            unlinked_reflectors=unlinked_reflectors,
             rp=RP_QUICK_CALC if not write else RP_FULL_CALC,
         )
 

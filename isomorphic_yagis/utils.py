@@ -103,7 +103,7 @@ def plot_results(results: dict) -> tuple[list[dict[str, float]], dict[str, float
     plt.title("Acceptance rate")
 
     plt.subplot(234)
-    plt.plot(results["variance"])
+    plt.semilogy(results["variance"])
     plt.title("Variance")
 
     plt.subplot(235)
@@ -120,8 +120,8 @@ def plot_results(results: dict) -> tuple[list[dict[str, float]], dict[str, float
 
 
 def plot_population(antennas: list[dict[str, float]], fitnesses: list[float]) -> None:
-
-    bands = [key.split("_")[-1] for key in antennas[0].keys() if "driven" in key]
+    """Plot the distributions of parameters in a population of antennas."""
+    bands = [key.split("_")[-1] for key in antennas[0] if "driven" in key]
     n_bands = len(bands)
     n_cols = max(n_bands, 3)
 
